@@ -96,58 +96,54 @@ void dfs(StdFst &fst, StateId s, vector<bool> &visited) {
 	}
 }
 
+typedef SortedMatcher<StdFst> SM;
+typedef TableMatcher<StdFst> TM;
+typedef ArcLookAheadMatcher<SM> LA_SM;
+typedef SequenceComposeFilter<TM, LA_SM> SCF;
+typedef LookAheadComposeFilter<SCF, TM, LA_SM, MATCH_INPUT> LCF;
+typedef PushWeightsComposeFilter<LCF, TM, LA_SM, MATCH_INPUT> PWCF;
+typedef PushLabelsComposeFilter<PWCF, TM, LA_SM, MATCH_INPUT> PWLCF;
+typedef GenericComposeStateTable<StdArc,PWLCF::FilterState> ST;
+typedef CacheImplOptions<DefaultCacheStore<StdArc>> CACHE_OPTIONS;
+
+ComposeFst<StdArc> OTFCompose(StdFst &ifst1, StdFst &ifst2, CACHE_OPTIONS &cache_opts)
+{
+	TM* lam1 = new TM(ifst1, MATCH_OUTPUT);
+	LA_SM* lam2 = new LA_SM(ifst2, MATCH_INPUT);
+	PWLCF* laf = new PWLCF(ifst1, ifst2, lam1, lam2);
+	ST* st = new ST(ifst1, ifst2);
+	ComposeFstImplOptions<TM, LA_SM, PWLCF> opts(cache_opts, lam1, lam2, laf, st);
+	return ComposeFst<StdArc>(ifst1, ifst2, opts);
+}
+
 int main() {
 
-	StdFst *left_fst = Fst<StdArc>::Read("otf/graph_V_lm1/HCLG_sorted.fst");
-	StdFst *right_fst = Fst<StdArc>::Read("otf/graph_V1toV2_lm1/hyp.fst");
+	StdFst *left_fst = Fst<StdArc>::Read("otf_gru/graph_V1_lm1_nnet3/HCLG_mod.fst");
+	StdFst *right_fst = Fst<StdArc>::Read("otf_gru/lang_V+Add_lm3/replace.fst");
 
 //	ComposeFst<StdArc> compose_fst = TableComposeFst(*left_fst, *right_fst);
 	//ComposeFst<StdArc> compose_fst = TableComposeFst(*left_fst, *right_fst);
 
 	DefaultCacheStore<StdArc> store =
 			DefaultCacheStore<StdArc>(CacheOptions(false,2000000));
+	CACHE_OPTIONS cache_opts = CACHE_OPTIONS(false, 2000000, &store);
 
-	CacheImplOptions<DefaultCacheStore<StdArc>> cache_opts =
-			CacheImplOptions<DefaultCacheStore<StdArc>>(false, 2000000, &store);
+	cache_opts.own_store = false;
 
-	//ComposeFst<StdArc> compose_fst =  TableComposeFst(*left_fst, *right_fst, cach_opts);
+	//ComposeFst<StdArc> compose_fst =  TableComposeFst(*left_fst, *right_fst, cache_opts);
 
-	typedef SortedMatcher<StdFst> SM;
-	typedef TableMatcher<StdFst> TM;
-	typedef ArcLookAheadMatcher<SM> LA_SM;
-	typedef SequenceComposeFilter<TM, LA_SM> SCF;
-	typedef LookAheadComposeFilter<SCF, TM, LA_SM, MATCH_INPUT> LCF;
-	typedef PushWeightsComposeFilter<LCF, TM, LA_SM, MATCH_INPUT> PWCF;
-	typedef PushLabelsComposeFilter<PWCF, TM, LA_SM, MATCH_INPUT> PWLCF;
-	typedef GenericComposeStateTable<StdArc,PWLCF::FilterState> ST;
-
-	TM* lam1 = new TM(*left_fst, MATCH_OUTPUT);
-	LA_SM* lam2 = new LA_SM(*right_fst, MATCH_INPUT);
-	PWLCF* laf = new PWLCF(*left_fst, *right_fst, lam1, lam2);
-	ST* st = new ST(*left_fst, *right_fst);
-	ComposeFstImplOptions<TM, LA_SM, PWLCF> opts(cache_opts, lam1, lam2, laf, st);
-
-	ComposeFst<StdArc> compose_fst = ComposeFst<StdArc>(*left_fst, *right_fst, opts);
-
-	Timer timer1;
-	int state_count = 0;
-	for (StateIterator<StdFst> siter(compose_fst); !siter.Done(); siter.Next())
-		state_count++;
-	vector<bool> visited(state_count);
-	for (auto e : visited) e = false;
-	dfs(compose_fst, compose_fst.Start(), visited);
-	cout << "Time 1 elapsed " << timer1.Elapsed() << endl;
-
-	ComposeFst<StdArc> compose_fst2 = ComposeFst<StdArc>(*left_fst, *right_fst, opts);
-
-	Timer timer2;
-	state_count = 0;
-	for (StateIterator<StdFst> siter(compose_fst2); !siter.Done(); siter.Next())
-		state_count++;
-	visited.resize(state_count);
-	for (auto e : visited) e = false;
-	dfs(compose_fst2, compose_fst2.Start(), visited);
-	cout << "Time 2 elapsed " << timer2.Elapsed() << endl;
+	for (int i=0; i<2; i++)
+	{
+		ComposeFst<StdArc> compose_fst = OTFCompose(*left_fst, *right_fst, cache_opts);
+		Timer timer;
+		int state_count = 0;
+		for (StateIterator<StdFst> siter(compose_fst); !siter.Done(); siter.Next())
+			cout << state_count++ << endl;
+		vector<bool> visited(state_count);
+		for (auto e : visited) e = false;
+		dfs(compose_fst, compose_fst.Start(), visited);
+		cout << "Time elapsed " << timer.Elapsed() << endl;
+	}
 
 //	if (compose_fst.Write("out.fst")) cout << "good" << endl;
 //	else cout << "bad" << endl;
